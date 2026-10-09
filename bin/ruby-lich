@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+# Small wrapper that exposes a "ruby executable" where ruby is using the
+# nix development environment. Intended to be used with front-ends like Saga.
+
+set -eu
+
+# Resolve the project directory relative to this script.
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+LICH_ROOT="$PROJECT_ROOT/upstream/lich-5"
+
+
+if [ "$#" -eq 0 ]; then
+  echo "Usage: ruby-lich PATH_TO_LICH_RBW [arguments...]" >&2
+  exit 2
+fi
+
+cd "$LICH_ROOT"
+
+# Run Ruby with the project's pinned Nix environment and gems.
+exec nix develop "$PROJECT_ROOT" --command \
+  env \
+    BUNDLE_GEMFILE="$LICH_ROOT/Gemfile" \
+    BUNDLE_PATH="$PROJECT_ROOT/upstream/.bundle" \
+    BUNDLE_WITHOUT=gtk \
+    ruby -rbundler/setup "$@" --no-gtk

@@ -30,14 +30,35 @@
           libffi
           libyaml
           zlib
+
+          # Headless dependencies
+          ncurses
         ];
 
         shellHook = ''
-          export BUNDLE_PATH="$PWD/upstream/.bundle"
-          export BUNDLE_WITHOUT="development:vscode"
-
-          echo "Ruby: $(ruby --version)"
-          echo "Bundler: $(bundle --version)"
+          # export BUNDLE_PATH="$PWD/upstream/.bundle"
+          # export BUNDLE_WITHOUT="development:vscode"
+          # export LICH_ROOT="$PWD/upstream/lich-5"
+          # export BUNDLE_PATH="''${XDG_DATA_HOME:-$HOME/.local/share}/lich5/bundle"
+          # Small wrapper to launch lich.
+          # lich() {
+          #   (
+          #     cd "$LICH_ROOT" || return 1
+          #     bundle exec ruby lich.rbw "$@"
+          #   )
+          # }
+          #
+          # # Headless lich wrapper
+          # lichh() {
+          #   (
+          #     cd "$LICH_ROOT" || return 1
+          #     bundle exec ruby lich.rbw --no-gtk "$@"
+          #   )
+          # }
+          #
+          # echo "Ruby: $(ruby --version)"
+          # echo "Bundler: $(bundle --version)"
+          source ./bin/hook.sh
         '';
       };
     };
