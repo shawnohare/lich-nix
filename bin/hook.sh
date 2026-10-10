@@ -1,7 +1,4 @@
-# nix develop shell hook for POC (no GTK)
-
-# export BUNDLE_PATH="$PWD/upstream/.bundle"
-# export BUNDLE_WITHOUT="development:vscode"
+# Paths for the writable Lich checkout and application data.
 
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 # For some reason lich doesn't expose a single config option for where it puts
@@ -9,10 +6,6 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 # use its defaults.
 export LICH_DATA_HOME="${LICH_DATA_HOME:-${XDG_DATA_HOME}/lich-5}"
 export LICH_SRC_HOME="${LICH_SRC_HOME:-${LICH_DATA_HOME}}"
-
-# export BUNDLE_WITHOUT=gtk
-export BUNDLE_GEMFILE="${LICH_SRC_HOME}/Gemfile"
-export BUNDLE_PATH="${XDG_DATA_HOME}/lich-nix/bundle"
 
 # Small wrapper to launch lich.
 lich() {
@@ -26,16 +19,7 @@ lichh() {
     bundle exec ruby lich.rbw --no-gtk "$@"
 }
 
-# Bundle install test
-bundle_install() {
-    cd "${LICH_SRC_HOME}" || return 1
-    bundle install --no-lock
-}
-
-
 echo "Ruby: $(ruby --version)"
 echo "Bundler: $(bundle --version)"
-echo "BUNDLE_GEMFILE: ${BUNDLE_GEMFILE}"
-echo "BUNDLE_PATH: ${BUNDLE_PATH}"
 echo "LICH_SRC_HOME (lich.rbw): ${LICH_SRC_HOME}"
 echo "LICH_DATA_HOME (scripts, logs, etc.): ${LICH_DATA_HOME}"

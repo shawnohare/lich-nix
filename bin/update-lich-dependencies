@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# First edit inputs.lich-src.url in flake.nix to the desired Lich release tag.
+# This helper refreshes that input's lock, copies the pinned Gemfile, resolves
+# required gem changes, and verifies the packages. It does not switch the
+# writable checkout used by Saga; use sync-lich-checkout separately.
+if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+  echo "Usage: $0"
+  echo "After editing Lich's tag in flake.nix, refresh and verify its dependencies."
+  exit 0
+fi
+if [[ $# -ne 0 ]]; then
+  echo "Usage: $0 (edit the release tag in flake.nix first)" >&2
+  exit 2
+fi
+PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
+cd "$PROJECT_ROOT"
+
+# Update only Lich, leaving the pinned Ruby/native toolchain unchanged.
+nix flake update lich-src
+# Fetch/read the exact source locked by this flake, not the manual clone.
+lich_source=$(nix eval --impure --raw --expr \
+  '(builtins.getFlake (toString ./.)).inputs.lich-src.outPath')
+# Store files are read-only. Install a writable snapshot for future updates.
+install -m 644 "$lich_source/Gemfile" nix/gems/Gemfile
+
+nix develop .#gem-tools --command bash -c '
+  set -euo pipefail
+  cd nix/gems
+  # Preserve old gem versions wherever the new Gemfile still allows them.
+  # To upgrade all gems afterward, run bin/update-gems from the repo root.
+  bundle lock
+  bundix
+' bash
+
+"$PROJECT_ROOT/bin/check-runtime"
+echo "Review and commit flake.nix, flake.lock, and changed files in nix/gems/."
+echo "Then run bin/sync-lich-checkout and verify Lich/Saga manually."
