@@ -16,19 +16,22 @@ export BUNDLE_PATH="${XDG_DATA_HOME}/lich-nix/bundle"
 
 # Small wrapper to launch lich.
 lich() {
-    (
-      cd "${LICH_SRC_HOME}" || return 1
-      bundle exec ruby lich.rbw "$@"
-    )
+    cd "${LICH_SRC_HOME}" || return 1
+    bundle exec ruby lich.rbw "$@"
 }
 
 # Headless lich wrapper
 lichh() {
-    (
-      cd "${LICH_SRC_HOME}" || return 1
-      bundle exec ruby lich.rbw --no-gtk "$@"
-    )
+    cd "${LICH_SRC_HOME}" || return 1
+    bundle exec ruby lich.rbw --no-gtk "$@"
 }
+
+# Bundle install test
+bundle_install() {
+    cd "${LICH_SRC_HOME}" || return 1
+    bundle install --no-lock
+}
+
 
 echo "Ruby: $(ruby --version)"
 echo "Bundler: $(bundle --version)"
