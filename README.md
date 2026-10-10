@@ -1,6 +1,6 @@
 # lich-nix
 
-A Nix development environment for running
+A Nix development environment and standalone Ruby launcher for running
 [Lich 5](https://github.com/elanthia-online/lich-5), the Ruby scripting engine
 and game proxy for Simutronics' Gemstone IV and Dragonrealms. The development
 environment should expose all dependencies to allow lich to run.
@@ -8,6 +8,8 @@ environment should expose all dependencies to allow lich to run.
 Currently targets Apple Silicon macOS (`aarch64-darwin`) with Ruby 4.0 and
 tested against Lich v5.22.0. GTK dependencies successfully build and Lich GUI
 runs and can be utilized by Saga.
+
+
 
 ## Development Setup
 
@@ -55,7 +57,7 @@ git switch --detach <tag>
 
 ### 4. Install Ruby dependencies
 
-Configure Bundler to install dependencies locally and exclude the GTK group:
+Install dependencies locally, including the GTK group:
 
 ```bash
 cd "${LICH_SRC_HOME}"
@@ -103,74 +105,103 @@ Ruby gems already installed are reused. There is no
 need to rerun `bundle install` unless the upstream dependencies change.
 
 
-## Launching Saga with Headless Lich (POC)
+## Launching Saga with the standalone Ruby launcher
 
 [Saga](https://gswiki.play.net/Saga) is Simutronics' official GemStone IV
-frontend. It supports launching Lich directly, but our Nix-managed Ruby
-environment requires some additional setup.
+frontend. The `saga-ruby` Nix package lets Saga invoke the pinned Ruby 4.0
+runtime with Bundler and GTK configured, even when Saga does not inherit from a
+`nix develop` shell environment (i.e., is opened normally).
 
-### 1. Expose Via Lich Login Option
+### 1. Install Lich and its gems
 
-If there is no "Via Lich" option in Saga's "Connect" pane, follow these steps.
+Complete the development setup above first. The launcher reuses the Lich
+checkout and gems installed by `bundle install`; it does not package or
+install them itself.
 
-Start Saga normally and login with the "Direct" option.
-Toggle `Menu > Session > Allow login with Lich`. The Menu icon is likely in a
-top corner.
+### 2. Build the launcher
 
-### 2. Launch Saga with shell coxtext
+The package definition lives in `nix/saga-ruby.nix`, with its shell template in
+`nix/saga-ruby.sh`. Nix substitutes the pinned Ruby executable into the template
+and wraps it with GTK runtime settings.
 
-In this repository's root, execute
+From this repository:
 
 ```sh
-bin/saga
+nix build .#saga-ruby
+./result/bin/saga-ruby --version
 ```
-This wrapper locates the Saga executable in `/Applications` and opens it from a
-nix development shell that has all of headless Lich's required dependencies.
 
-Unlike `open -a Saga`, executing the binary directly allows Saga to inherit the
-development shell's environment, including the Nix executable search path.
+Use the absolute path `<repo>/result/bin/saga-ruby` as Saga's Ruby executable.
+Keep the `result` symlink: it protects the runtime from Nix garbage collection.
+Rebuilding updates this symlink, so Saga can keep using the same path.
 
-### 3. Configure Saga
+Alternatively, install into your Nix profile for a path independent of this
+checkout:
 
-Within Saga, select **Via Lich** from its login interface.
+```sh
+nix profile add .#saga-ruby
+```
 
-Supply these paths, replacing `${LICH_SRC_HOME}` with the absolute path to the
-`lich-5` git checkout:
+The executable is then available at `~/.nix-profile/bin/saga-ruby`. Expand `~`
+to your full home directory path when entering it in Saga.
+
+### 3. Configure paths if needed
+
+Defaults match the development shell:
+
+| Setting | Default |
+|---|---|
+| `XDG_DATA_HOME` | `$HOME/.local/share` |
+| `LICH_DATA_HOME` | `$XDG_DATA_HOME/lich-5` |
+| `LICH_SRC_HOME` | `$LICH_DATA_HOME` |
+| `BUNDLE_GEMFILE` | `$LICH_SRC_HOME/Gemfile` |
+| `BUNDLE_PATH` | `$XDG_DATA_HOME/lich-nix/bundle` |
+
+For custom paths, create `~/.config/lich-nix/runtime.sh` (or
+`$XDG_CONFIG_HOME/lich-nix/runtime.sh`). The launcher sources this file as shell
+code, so use only trusted configuration. For example:
+
+```sh
+export LICH_SRC_HOME="/absolute/path/to/lich-5"
+export BUNDLE_PATH="/absolute/path/to/bundle"
+```
+
+These settings apply when Saga is launched from Finder as well. Inherited
+environment variables also work; the configuration file takes precedence.
+Use the same source and gem paths during `bundle install` in the development
+shell. GTK remains enabled by default. For headless use, pass `--no-gtk` to
+Lich; the launcher forwards all arguments unchanged and propagates Ruby's
+exit status.
+
+### 4. Configure Saga
+
+Open Saga normally. If **Via Lich** is missing from the Connect pane, log in
+using **Direct**, then enable `Menu > Session > Allow login with Lich`.
+
+Select **Via Lich** and supply absolute paths:
 
 | Setting | Path |
 |---|---|
-| Lich folder | `${LICH_SRC_HOME}` |
-| Ruby executable | `<repo>/bin/saga-ruby-headless-lich.sh` or leave empty |
+| Lich folder | Your Lich checkout, normally `/Users/<name>/.local/share/lich-5` |
+| Ruby executable | `<repo>/result/bin/saga-ruby` or your profile's `bin/saga-ruby` |
 
-Do not use `~` in these fields; provide absolute paths.
-
-Our ruby executable wrapper sets a few `BUNDLE_*` env vars and explicitly
-passes in `--no-gtk` as an additional argument.
-
-Then proceed through Saga's login process.
-
+Then proceed through Saga's login process. `bin/saga` and the older Ruby
+wrappers remain available for development-shell testing.
 
 ## Current status and limitations
 
-**Confirmed:** Launching Saga directly from `nix develop`, with the Nix-aware
-Ruby wrapper, allows Saga to invoke Lich. Lich script downloads were observed.
+The standalone launcher supplies the pinned Ruby executable and GTK runtime
+configuration, including fonts, icon themes, MIME data, and image loaders.
+The checkout and installed gems remain outside the Nix store and writable.
 
-**Not yet confirmed:** A complete, stable gameplay session with all Lich
-scripting and graphical features operational.
+Saga login was confirmed with Saga opened from Spotlight and its Ruby
+executable set to the standalone launcher. A complete gameplay session still
+needs manual verification. Ruby gems are not yet packaged with Nix: install them through
+`bundle install` in the development shell and reinstall native extensions if
+the pinned Ruby or native library dependencies change. Keep the development
+shell dependencies available while using gems built against them, since those
+external gems can reference Nix store paths outside the launcher's closure.
 
-This approach is intended as a development proof of concept, not a final
-installation mechanism.
-
-Current limitations:
-
-- Saga must be launched from the Nix development environment so the wrapper can find `nix`.
-- The Ruby wrapper enters `nix develop` each time Saga invokes it.
-- The wrapper assumes Saga launches the Lich script using the expected argument convention.
-- GTK is disabled because its Ruby bindings have not yet been successfully built.
-- Native Lich GTK windows and GTK-dependent script features are unavailable.
-
-A future Nix package should provide a standalone executable wrapper that does
-not depend on an interactive development shell.
 
 ## TODO
 
@@ -184,7 +215,7 @@ not depend on an interactive development shell.
   credentials, saved logins, maps, scripts, databases, and logs. This might be
   tricky due to the fact that lich5 does not seem to expose a single env var
   controlling where it places application data.
-- [ ] Investigate a standalone Nix-provided Ruby launcher that can be executed
+- [x] Investigate a standalone Nix-provided Ruby launcher that can be executed
   by Saga without first launching Saga from a Nix shell.
 
 ### GTK support
