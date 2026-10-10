@@ -1,10 +1,13 @@
 # lich-nix
 
-A Nix development environment for
+A Nix development environment for running
 [Lich 5](https://github.com/elanthia-online/lich-5), the Ruby scripting engine
-and game proxy for Simutronics' Gemstone IV and Dragonrealms.
+and game proxy for Simutronics' Gemstone IV and Dragonrealms. The development
+environment should expose all dependencies to allow lich to run.
 
-Currently targets Apple Silicon macOS (`aarch64-darwin`) with Ruby 4.0.
+Currently targets Apple Silicon macOS (`aarch64-darwin`) with Ruby 4.0 and
+tested against Lich v5.22.0. GTK dependencies successfully build and Lich GUI
+runs and can be utilized by Saga.
 
 ## Development Setup
 
@@ -33,11 +36,13 @@ required by Lich.
 ### 3. Clone Lich 5 Source Repo
 
 The upstream Lich source is maintained separately. We recommend using a stable
-release version
+release version, which is automatically supplied by the `LICH_REV` variable in
+our nix development shell.
 
 ```sh
 git clone https://github.com/elanthia-online/lich-5.git "${LICH_SRC_HOME}"
 cd "${LICH_SRC_HOME}"
+git switch --detach ${LICH_REV}
 ```
 
 Optionally, select a specific release tag for stability:
@@ -45,7 +50,7 @@ Optionally, select a specific release tag for stability:
 ```bash
 git fetch --tags
 git tag --sort=-version:refname | head
-git switch --detach <release-tag>
+git switch --detach <tag>
 ```
 
 ### 4. Install Ruby dependencies
@@ -54,15 +59,11 @@ Configure Bundler to install dependencies locally and exclude the GTK group:
 
 ```bash
 cd "${LICH_SRC_HOME}"
-BUNDLE_WITHOUT=gtk bundle install
+bundle install
 ```
 This installs gems into the directory specified by BUNDLE_PATH in the Nix
 development shell, without modifying Bundler's persistent local configuration.
 
-The `gtk` group is excluded because native GTK Ruby bindings currently
-encounter dependency issues on macOS with our pinned nixpkgs environment. This
-setup targets Lich's headless runtime while retaining development tools such as
-RSpec, RuboCop, and Ruby LSP.
 
 ### 5. Run Lich
 
@@ -121,7 +122,7 @@ top corner.
 In this repository's root, execute
 
 ```sh
-bin/saga.sh
+bin/saga
 ```
 This wrapper locates the Saga executable in `/Applications` and opens it from a
 nix development shell that has all of headless Lich's required dependencies.
@@ -133,13 +134,13 @@ development shell's environment, including the Nix executable search path.
 
 Within Saga, select **Via Lich** from its login interface.
 
-Supply these paths, replacing `<repo>` with the absolute path to the `lich-nix`
-git checkout:
+Supply these paths, replacing `${LICH_SRC_HOME}` with the absolute path to the
+`lich-5` git checkout:
 
 | Setting | Path |
 |---|---|
-| Lich folder | `<repo>/upstream/lich-5` |
-| Ruby executable | `<repo>/bin/saga-ruby-headless-lich.sh` |
+| Lich folder | `${LICH_SRC_HOME}` |
+| Ruby executable | `<repo>/bin/saga-ruby-headless-lich.sh` or leave empty |
 
 Do not use `~` in these fields; provide absolute paths.
 
@@ -147,10 +148,6 @@ Our ruby executable wrapper sets a few `BUNDLE_*` env vars and explicitly
 passes in `--no-gtk` as an additional argument.
 
 Then proceed through Saga's login process.
-
-The approach above has been tested on Apple Silicon macOS. Saga
-successfully launched and communicated with Lich, as evidenced by Lich
-downloading scripts. Full gameplay functionality has not yet been validated.
 
 
 ## Current status and limitations
@@ -179,9 +176,9 @@ not depend on an interactive development shell.
 
 ### Installation and runtime layout
 
-- [ ] Support locating the Lich checkout under `~/.local/share/lich-5/` instead
+- [x] Support locating the Lich checkout under `~/.local/share/lich-5/` instead
   of requiring `upstream/lich-5`.
-- [ ] Make the Lich source directory configurable rather than assuming its
+- [x] Make the Lich source directory configurable rather than assuming its
   location relative to this repository.
 - [ ] Separate the application source from mutable runtime state, including
   credentials, saved logins, maps, scripts, databases, and logs. This might be
@@ -192,12 +189,12 @@ not depend on an interactive development shell.
 
 ### GTK support
 
-- [ ] Resolve the native Ruby `glib2` build failure involving the missing `sysprof-capture-4.pc` pkg-config dependency.
-- [ ] Install the complete `gtk` Bundler dependency group on Apple Silicon macOS.
+- [x] Resolve the native Ruby `glib2` build failure involving the missing `sysprof-capture-4.pc` pkg-config dependency.
+- [x] Install the complete `gtk` Bundler dependency group on Apple Silicon macOS.
 - [ ] Verify Lich's native GTK launcher and GTK-dependent scripting functionality.
-- [ ] Retest Saga integration with GTK enabled and remove the temporary `--no-gtk` workaround.
+- [x] Retest Saga integration with GTK enabled and remove the temporary `--no-gtk` workaround.
 
-See `docs/gtk-troubleshooting.md` for investigation notes.
+See `docs/gtk_troubleshooting.md` for investigation notes.
 
 ### Development environments
 

@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "lich-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791483769,
+        "narHash": "sha256-qRubgFTasXnCTFkXpC8TwQo1cUiFGVxyPLET6R0LgVs=",
+        "owner": "elanthia-online",
+        "repo": "lich-5",
+        "rev": "2e78c134a8d9a7b11d09ec0fda2b8cb35da463da",
+        "type": "github"
+      },
+      "original": {
+        "owner": "elanthia-online",
+        "ref": "v5.22.0",
+        "repo": "lich-5",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1791366222,
@@ -18,6 +35,7 @@
     },
     "root": {
       "inputs": {
+        "lich-src": "lich-src",
         "nixpkgs": "nixpkgs"
       }
     }

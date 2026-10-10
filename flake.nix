@@ -4,61 +4,78 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    lich-src = {
+      url = "github:elanthia-online/lich-5?ref=v5.22.0";
+      flake = false;
+    };
   };
 
-  outputs = { nixpkgs, ... }:
+  outputs = { nixpkgs, lich-src, ... }:
     let
       system = "aarch64-darwin";
       pkgs = nixpkgs.legacyPackages.${system};
+
+      fontsConf = pkgs.makeFontsConf {
+        fontDirectories = [
+          pkgs.dejavu_fonts
+        ];
+      };
+
+      # macOS font libs.
+      # fontsConf = pkgs.makeFontsConf {
+      #   fontDirectories = [
+      #     "/System/Library/Fonts"
+      #     "/Library/Fonts"
+      #   ];
+      # };
     in
     {
       devShells.${system}.default = pkgs.mkShell {
+
         packages = with pkgs; [
+          # Ruby and build tools
           ruby_4_0
           pkg-config
           bundix
 
-          # Native dependencies
-          gtk3
-          gobject-introspection
-          glib
-          cairo
-          pango
-          gdk-pixbuf
-          sqlite
-          openssl
+          # Core native dependencies
           libffi
           libyaml
+          ncurses
+          openssl
+          sqlite
           zlib
 
-          # Headless dependencies
-          ncurses
+          # GTK native libraries and bindings' build dependencies
+          cairo
+          gdk-pixbuf
+          glib
+          gobject-introspection
+          gtk3
+          pango
+
+          # Additional transitive pkg-config dependencies
+          expat
+          libdatrie
+          libepoxy
+          libpthread-stubs
+          libsysprof-capture
+          libthai
+          libxdmcp
+          pcre2
+
+          # GTK graphical runtime assets
+          adwaita-icon-theme
+          hicolor-icon-theme
+          librsvg
+          shared-mime-info
         ];
 
         shellHook = ''
-          # export BUNDLE_PATH="$PWD/upstream/.bundle"
-          # export BUNDLE_WITHOUT="development:vscode"
-          # export LICH_ROOT="$PWD/upstream/lich-5"
-          # export BUNDLE_PATH="''${XDG_DATA_HOME:-$HOME/.local/share}/lich5/bundle"
-          # Small wrapper to launch lich.
-          # lich() {
-          #   (
-          #     cd "$LICH_ROOT" || return 1
-          #     bundle exec ruby lich.rbw "$@"
-          #   )
-          # }
-          #
-          # # Headless lich wrapper
-          # lichh() {
-          #   (
-          #     cd "$LICH_ROOT" || return 1
-          #     bundle exec ruby lich.rbw --no-gtk "$@"
-          #   )
-          # }
-          #
-          # echo "Ruby: $(ruby --version)"
-          # echo "Bundler: $(bundle --version)"
           source ./bin/hook.sh
+          export FONTCONFIG_FILE="${fontsConf}"
+          export LICH_REV="${lich-src.rev}"
         '';
       };
     };
