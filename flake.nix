@@ -22,6 +22,10 @@
         ];
       };
 
+      sagaRuby = pkgs.callPackage ./nix/saga-ruby.nix {
+        inherit fontsConf;
+      };
+
       # macOS font libs.
       # fontsConf = pkgs.makeFontsConf {
       #   fontDirectories = [
@@ -31,6 +35,16 @@
       # };
     in
     {
+      packages.${system} = {
+        saga-ruby = sagaRuby;
+        default = sagaRuby;
+      };
+
+      apps.${system}.saga-ruby = {
+        type = "app";
+        program = "${sagaRuby}/bin/saga-ruby";
+      };
+
       devShells.${system}.default = pkgs.mkShell {
 
         packages = with pkgs; [
