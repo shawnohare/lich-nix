@@ -4,19 +4,22 @@ Launcher regression checks run without Nix on the executable search path:
 
 These cover Ruby version probes, missing-install diagnostics, desktop path
 configuration, argument forwarding, exit status, and GTK runtime asset paths.
-Loading the existing GTK, SQLite, and curses gems was also verified with a
-minimal environment. Saga login from Spotlight was confirmed manually;
-extended gameplay remains a separate manual check.
+Packaged native gems are loaded with an empty home and stale Bundler settings
+to prove the launcher does not depend on a user's bundle installation.
+Saga login and extended gameplay remain separate manual checks.
 """
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
 
-LAUNCHER = Path(__file__).resolve().parents[1] / "result/bin/saga-ruby"
+LAUNCHER = Path(os.environ.get(
+    "SAGA_RUBY", str(Path(__file__).resolve().parents[1] / "result/bin/saga-ruby")
+))
 
 
 class LauncherTests(unittest.TestCase):
@@ -39,7 +42,6 @@ class LauncherTests(unittest.TestCase):
     def install_fixture(self, checkout=None):
         checkout = checkout or self.home / ".local/share/lich-5"
         checkout.mkdir(parents=True)
-        (checkout / "Gemfile").write_text('source "https://rubygems.org"\n')
         return checkout
 
     def test_version_without_nix_or_checkout(self):
@@ -52,7 +54,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(self.run_ruby().returncode, 2)
         result = self.run_ruby("lich.rbw")
         self.assertEqual(result.returncode, 1)
-        self.assertIn(str(self.home / ".local/share/lich-5/Gemfile"), result.stderr)
+        self.assertIn(str(self.home / ".local/share/lich-5"), result.stderr)
 
     def test_arguments_environment_and_exit_status(self):
         checkout = self.install_fixture()
@@ -67,7 +69,10 @@ class LauncherTests(unittest.TestCase):
         args, cwd, env = json.loads(result.stdout.splitlines()[-1])
         self.assertEqual(args, ["argument with spaces", "--no-gtk"])
         self.assertEqual(cwd, str(checkout.resolve()))
-        self.assertEqual(env["BUNDLE_PATH"], str(self.home / ".local/share/lich-nix/bundle"))
+        self.assertNotIn("BUNDLE_PATH", env)
+        self.assertTrue(env["BUNDLE_GEMFILE"].startswith("/nix/store/"))
+        self.assertTrue(env["GEM_HOME"].startswith("/nix/store/"))
+        self.assertEqual(env["GEM_HOME"], env["GEM_PATH"])
         self.assertTrue(Path(env["FONTCONFIG_FILE"]).is_file())
         self.assertTrue(Path(env["GDK_PIXBUF_MODULE_FILE"]).is_file())
         self.assertTrue(any(
@@ -75,18 +80,49 @@ class LauncherTests(unittest.TestCase):
             for p in env["GI_TYPELIB_PATH"].split(":")
         ))
 
-    def test_desktop_configuration_overrides_environment(self):
+    def test_checkout_environment_override(self):
         checkout = self.install_fixture(self.home / "custom checkout")
-        config = self.home / "custom config/lich-nix"
-        config.mkdir(parents=True)
-        (config / "runtime.sh").write_text(f'export LICH_SRC_HOME="{checkout}"\n')
-        self.env.update({
-            "XDG_CONFIG_HOME": str(config.parent),
-            "LICH_SRC_HOME": "/missing",
-        })
-        result = self.run_ruby("-e", 'puts ENV.fetch("BUNDLE_GEMFILE")')
+        self.env["LICH_SRC_HOME"] = str(checkout)
+        result = self.run_ruby("-e", 'puts Dir.pwd')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(str(checkout / "Gemfile"), result.stdout)
+        self.assertEqual(result.stdout.strip(), str(checkout.resolve()))
+
+    def test_packaged_native_gems_with_empty_home_and_stale_config(self):
+        checkout = self.install_fixture()
+        (checkout / ".bundle").mkdir()
+        (checkout / ".bundle/config").write_text(
+            'BUNDLE_PATH: "/missing"\nBUNDLE_WITHOUT: "gtk:profanity"\n'
+        )
+        self.env.update({
+            "BUNDLE_GEMFILE": "/missing/Gemfile",
+            "BUNDLE_PATH": "/missing/bundle",
+            "GEM_HOME": "/missing/gems",
+            "GEM_PATH": "/missing/gems",
+            "BUNDLE_WITHOUT": "gtk:profanity",
+            "BUNDLE_WITH": "development:vscode",
+        })
+        result = self.run_ruby("-e", '''
+require "sqlite3"
+require "curses"
+require "openssl"
+require "ffi"
+require "yaml"
+require "zlib"
+require "glib2"
+require "gobject-introspection"
+require "gtk3"
+# Load GTK's typelib and shared libraries without opening a display/window.
+GObjectIntrospection::Repository.default.require("Gtk", "3.0")
+db = SQLite3::Database.new(":memory:")
+raise "SQLite failed" unless db.get_first_value("select 42") == 42
+names = %w[sqlite3 curses openssl ffi yaml zlib glib2 gobject-introspection gtk3]
+raise "external gem loaded" unless names.all? { |name|
+  Gem.loaded_specs.fetch(name).full_gem_path.start_with?("/nix/store/")
+}
+puts "packaged native gems loaded"
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("packaged native gems loaded", result.stdout)
 
 
 if __name__ == "__main__":

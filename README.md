@@ -10,7 +10,6 @@ tested against Lich v5.22.0. GTK dependencies successfully build and Lich GUI
 runs and can be utilized by Saga.
 
 
-
 ## Development Setup
 
 ### Prerequisites
@@ -31,78 +30,33 @@ cd lich-nix
 nix develop
 ```
 
-The flake provides Ruby 4.0, Bundler, and the native libraries and build tools
-required by Lich.
+The flake provides Ruby 4.0, Bundler, packaged Ruby gems (including GTK,
+curses, development, and editor dependencies), and native libraries and build
+tools. Nix builds or retrieves the gems automatically; no `bundle install` is
+needed.
 
 
-### 3. Clone Lich 5 Source Repo
+### 3. Set up the Lich 5 repo checkout
 
-The upstream Lich source is maintained separately. We recommend using a stable
-release version, which is automatically supplied by the `LICH_REV` variable in
-our nix development shell.
+From this repository run:
 
 ```sh
-git clone https://github.com/elanthia-online/lich-5.git "${LICH_SRC_HOME}"
-cd "${LICH_SRC_HOME}"
-git switch --detach ${LICH_REV}
+bin/sync-lich-checkout
 ```
 
-Optionally, select a specific release tag for stability:
+The helper clones Lich if the destination is missing or empty, then switches
+it to the exact revision pinned by this flake.
 
-```bash
-git fetch --tags
-git tag --sort=-version:refname | head
-git switch --detach <tag>
-```
-
-### 4. Install Ruby dependencies
-
-Install dependencies locally, including the GTK group:
-
-```bash
-cd "${LICH_SRC_HOME}"
-bundle install
-```
-This installs gems into the directory specified by BUNDLE_PATH in the Nix
-development shell, without modifying Bundler's persistent local configuration.
-
-
-### 5. Run Lich
+### 4. Run Lich (as a test)
 
 The Nix development shell defines `lich` and `lichh` function that invokes Lich
 through Bundler. Usage:
 
 ```bash
 lich --version
-lich --help
-lich --help login
 ```
 
-The function is equivalent to running:
-
-```bash
-bundle exec ruby ./upstream/lich-5/lich.rbw
-```
 The `lichh` function is the "lich headless" version that always passes `--no-gtk`.
-
-
-### 6. Leaving and re-entering the environment
-
-Exit the development shell with:
-
-```bash
-exit
-```
-
-To resume work:
-
-```bash
-cd lich-nix
-nix develop
-```
-
-Ruby gems already installed are reused. There is no
-need to rerun `bundle install` unless the upstream dependencies change.
 
 
 ## Launching Saga with the standalone Ruby launcher
@@ -112,17 +66,18 @@ frontend. The `saga-ruby` Nix package lets Saga invoke the pinned Ruby 4.0
 runtime with Bundler and GTK configured, even when Saga does not inherit from a
 `nix develop` shell environment (i.e., is opened normally).
 
-### 1. Install Lich and its gems
+### 1. Install Lich
 
-Complete the development setup above first. The launcher reuses the Lich
-checkout and gems installed by `bundle install`; it does not package or
-install them itself.
+Clone the pinned Lich release as described above. The launcher packages Ruby
+and its gems; the Lich checkout and application data remain writable files
+outside the Nix store.
 
 ### 2. Build the launcher
 
 The package definition lives in `nix/saga-ruby.nix`, with its shell template in
-`nix/saga-ruby.sh`. Nix substitutes the pinned Ruby executable into the template
-and wraps it with GTK runtime settings.
+`nix/saga-ruby.sh`. Nix substitutes the pinned Ruby executable and packaged gem
+environment into the template and wraps it with GTK runtime settings. The runtime includes the
+`default`, `gtk`, and `profanity` gem groups.
 
 From this repository:
 
@@ -135,6 +90,7 @@ Use the absolute path `<repo>/result/bin/saga-ruby` as Saga's Ruby executable.
 Keep the `result` symlink: it protects the runtime from Nix garbage collection.
 Rebuilding updates this symlink, so Saga can keep using the same path.
 
+their application data; tracked local edits block the switch.
 Alternatively, install into your Nix profile for a path independent of this
 checkout:
 
@@ -154,24 +110,22 @@ Defaults match the development shell:
 | `XDG_DATA_HOME` | `$HOME/.local/share` |
 | `LICH_DATA_HOME` | `$XDG_DATA_HOME/lich-5` |
 | `LICH_SRC_HOME` | `$LICH_DATA_HOME` |
-| `BUNDLE_GEMFILE` | `$LICH_SRC_HOME/Gemfile` |
-| `BUNDLE_PATH` | `$XDG_DATA_HOME/lich-nix/bundle` |
 
-For custom paths, create `~/.config/lich-nix/runtime.sh` (or
-`$XDG_CONFIG_HOME/lich-nix/runtime.sh`). The launcher sources this file as shell
-code, so use only trusted configuration. For example:
+For custom paths, set environment variables before launching the process that
+uses the Ruby launcher. For example, in a terminal:
 
 ```sh
 export LICH_SRC_HOME="/absolute/path/to/lich-5"
-export BUNDLE_PATH="/absolute/path/to/bundle"
 ```
 
-These settings apply when Saga is launched from Finder as well. Inherited
-environment variables also work; the configuration file takes precedence.
-Use the same source and gem paths during `bundle install` in the development
-shell. GTK remains enabled by default. For headless use, pass `--no-gtk` to
-Lich; the launcher forwards all arguments unchanged and propagates Ruby's
-exit status.
+The launcher respects inherited environment variables. Saga opened from Finder
+or Spotlight generally does not inherit exports from your terminal and will use
+the defaults unless its launch environment supplies these variables. The
+launcher fixes `BUNDLE_GEMFILE`, `GEM_HOME`, and `GEM_PATH` to the packaged
+dependency set and ignores local Bundler configuration and `BUNDLE_PATH`. These
+are no longer runtime customization settings. GTK remains enabled by default.
+For headless use, pass `--no-gtk` to Lich; the launcher forwards all arguments
+unchanged and propagates Ruby's exit status.
 
 ### 4. Configure Saga
 
@@ -192,16 +146,44 @@ wrappers remain available for development-shell testing.
 
 The standalone launcher supplies the pinned Ruby executable and GTK runtime
 configuration, including fonts, icon themes, MIME data, and image loaders.
-The checkout and installed gems remain outside the Nix store and writable.
+The checkout and application data remain outside the Nix store and writable;
+the Ruby gems are now immutable Nix packages. Keeping the launcher in a Nix
+profile or through the `result` symlink also retains its referenced gems and
+native runtime libraries through garbage collection.
 
-Saga login was confirmed with Saga opened from Spotlight and its Ruby
-executable set to the standalone launcher. A complete gameplay session still
-needs manual verification. Ruby gems are not yet packaged with Nix: install them through
-`bundle install` in the development shell and reinstall native extensions if
-the pinned Ruby or native library dependencies change. Keep the development
-shell dependencies available while using gems built against them, since those
-external gems can reference Nix store paths outside the launcher's closure.
+The packaged dependency set targets the pinned Lich release. Updating the
+writable checkout independently does not update its Nix-managed gems. Scripts
+that install additional gems dynamically cannot modify this immutable bundle;
+add required gems to the package and rebuild. Existing gems under
+`~/.local/share/lich-nix/bundle` are unused and are not removed automatically.
 
+## Maintaining Ruby dependencies
+
+Run these helpers from any directory. Each script in `bin/` contains detailed
+comments describing its commands and the files it changes.
+
+- [`bin/update-gems`](bin/update-gems) updates all gems allowed by the current
+  Gemfile, regenerates `gemset.nix`, and builds and checks the runtime. Pass
+  gem names to limit the update, for example `bin/update-gems sqlite3`.
+- [`bin/update-lich-dependencies`](bin/update-lich-dependencies) handles a Lich
+  release bump. First edit the tag in `inputs.lich-src.url` in `flake.nix`, then
+  run this helper. It updates the Lich input lock, copies the new Gemfile
+  **from the pinned source in the Nix store**, resolves required gem changes
+  while preserving existing versions where possible, and builds and checks.
+- [`bin/sync-lich-checkout`](bin/sync-lich-checkout) creates your writable Lich
+  clone for initial setup or switches it to the pinned commit after a release bump. It uses the
+  environment variables/default paths or an explicit checkout path, preserves
+  application data, and refuses tracked local edits. Verify Lich/Saga manually
+  afterward.
+- [`bin/check-runtime`](bin/check-runtime) builds the launcher and development
+  gems and runs the flake checks without updating dependencies.
+
+The dependency files under `nix/gems/` are a Gemfile snapshot, Bundler's
+resolved `Gemfile.lock`, and the generated `gemset.nix`. Entering `nix develop`
+does not refresh them or switch your writable Lich clone. Review and commit
+changed dependency files together; for a Lich release bump, include
+`flake.nix` and `flake.lock` too. Do not run `bundle install` against the
+packaged environment.
 
 ## TODO
 
@@ -244,7 +226,7 @@ See `docs/gtk_troubleshooting.md` for investigation notes.
 
 ### Nix packaging
 
-- [ ] Package Ruby gems using `bundix` and `bundlerEnv`.
+- [x] Package Ruby gems using `bundix` and `bundlerEnv`.
 - [ ] Create a Nix derivation for Lich itself.
 - [ ] Provide a standalone `lich` executable using the packaged Ruby environment.
 - [ ] Ensure all mutable application data resides outside the immutable Nix store.

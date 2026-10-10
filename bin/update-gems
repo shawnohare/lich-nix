@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Update gems within the Gemfile already committed in this repository.
+# With no arguments, update every gem; otherwise update the named gems.
+# This does not change the pinned Lich release or refresh its Gemfile.
+if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+  echo "Usage: $0 [GEM_NAME ...]"
+  echo "Update all gems, or only the named gems, then build and verify."
+  exit 0
+fi
+for gem_name in "$@"; do
+  if [[ $gem_name == -* ]]; then
+    echo "Expected a gem name, got: $gem_name" >&2
+    exit 2
+  fi
+done
+PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
+cd "$PROJECT_ROOT"
+
+# gem-tools supplies Ruby/Bundler and the patched bundix, clears the frozen
+# runtime settings, and forces source gems for Nix-native compilation.
+# Pass gem names as positional arguments rather than interpolating shell code.
+nix develop .#gem-tools --command bash -c '
+  set -euo pipefail
+  cd nix/gems
+  bundle lock --update "$@"
+  bundix
+' bash "$@"
+
+"$PROJECT_ROOT/bin/check-runtime"
+echo "Review and commit nix/gems/Gemfile.lock and nix/gems/gemset.nix."
