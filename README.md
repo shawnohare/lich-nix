@@ -76,8 +76,9 @@ outside the Nix store.
 
 The package definition lives in `nix/saga-ruby.nix`, with its shell template in
 `nix/saga-ruby.sh`. Nix substitutes the pinned Ruby executable and packaged gem
-environment into the template and wraps it with GTK runtime settings. The runtime includes the
-`default`, `gtk`, and `profanity` gem groups.
+environment into the template and wraps it with GTK runtime settings. The
+runtime includes upstream gem groups except `development` and `vscode`.
+The development shell includes every upstream group.
 
 From this repository:
 
@@ -162,14 +163,14 @@ add required gems to the package and rebuild. Existing gems under
 Run these helpers from any directory. Each script in `bin/` contains detailed
 comments describing its commands and the files it changes.
 
-- [`bin/update-gems`](bin/update-gems) updates all gems allowed by the current
-  Gemfile, regenerates `gemset.nix`, and builds and checks the runtime. Pass
-  gem names to limit the update, for example `bin/update-gems sqlite3`.
+- [`bin/update-gems`](bin/update-gems) regenerates `gemset.nix` from the
+  pinned upstream Gemfile and Gemfile.lock, then builds and checks the runtime.
+  Gem versions follow upstream; this helper does not resolve new versions or
+  accept individual gem names.
 - [`bin/update-lich-dependencies`](bin/update-lich-dependencies) handles a Lich
   release bump. First edit the tag in `inputs.lich-src.url` in `flake.nix`, then
-  run this helper. It updates the Lich input lock, copies the new Gemfile
-  **from the pinned source in the Nix store**, resolves required gem changes
-  while preserving existing versions where possible, and builds and checks.
+  run this helper. It updates the Lich input lock and runs `bin/update-gems`
+  against the newly pinned upstream dependency files.
 - [`bin/sync-lich-checkout`](bin/sync-lich-checkout) creates your writable Lich
   clone for initial setup or switches it to the pinned commit after a release bump. It uses the
   environment variables/default paths or an explicit checkout path, preserves
@@ -178,12 +179,19 @@ comments describing its commands and the files it changes.
 - [`bin/check-runtime`](bin/check-runtime) builds the launcher and development
   gems and runs the flake checks without updating dependencies.
 
-The dependency files under `nix/gems/` are a Gemfile snapshot, Bundler's
-resolved `Gemfile.lock`, and the generated `gemset.nix`. Entering `nix develop`
-does not refresh them or switch your writable Lich clone. Review and commit
-changed dependency files together; for a Lich release bump, include
-`flake.nix` and `flake.lock` too. Do not run `bundle install` against the
-packaged environment.
+The Gemfile and Gemfile.lock come directly from the pinned Lich source in the
+Nix store. The input uses a Git checkout because upstream marks Gemfile.lock
+as `export-ignore`, omitting it from GitHub source archives. Only the generated
+`nix/gems/gemset.nix` is committed here: Nix still needs this metadata to fetch
+and build gems reproducibly. Group membership comes from that generated
+metadata; the launcher excludes `development` and `vscode`, while the
+development shell includes all groups. The flake checks verify that the
+metadata matches upstream's Gemfile and lockfile.
+
+Entering `nix develop` does not refresh metadata or switch your writable Lich
+clone. Review and commit `gemset.nix` together with `flake.nix` and `flake.lock`
+for a Lich release bump. Do not run `bundle install` against the packaged
+environment.
 
 ## TODO
 
