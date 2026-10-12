@@ -28,8 +28,8 @@ class MaintenanceTests(unittest.TestCase):
         self.source.mkdir()
         (self.source / "Gemfile").write_text("pinned upstream Gemfile\n")
         (self.source / "Gemfile").chmod(0o444)
-        (self.repo / "nix/gems/Gemfile").write_text("old snapshot\n")
-        (self.repo / "nix/gems/Gemfile").chmod(0o444)
+        (self.source / "Gemfile.lock").write_text("pinned upstream lockfile\n")
+        (self.source / "Gemfile.lock").chmod(0o444)
         self.checkout = self.base / "writable clone"
         self.checkout.mkdir()
         (self.checkout / ".git").mkdir()
@@ -47,7 +47,7 @@ if name == "nix":
         print(os.environ["PINNED_SOURCE"] if "outPath" in args[-1] else "pinned-revision")
     elif args[0] == "develop":
         sys.exit(subprocess.call(args[args.index("--command") + 1:]))
-elif name == "bundle" and os.environ.get("FAIL_BUNDLE"):
+elif name == "bundix" and os.environ.get("FAIL_BUNDIX"):
     sys.exit(23)
 elif name == "git":
     if args[0] == "clone":
@@ -78,36 +78,44 @@ elif name == "git":
     def commands(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
-    def test_update_all_and_targeted_gems(self):
-        for gems in ((), ("sqlite3", "ffi")):
-            with self.subTest(gems=gems):
-                self.log.write_text("")
-                result = self.run_helper("update-gems", *gems)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                calls = self.commands()
-                self.assertEqual([c[0] for c in calls],
-                                 ["nix", "bundle", "bundix", "nix", "nix", "nix"])
-                self.assertEqual(calls[1][1], ["lock", "--update", *gems])
-                self.assertEqual(calls[1][2], str(self.repo / "nix/gems"))
-                self.assertEqual(calls[4][1], ["build", "--no-link", ".#lich-development-gems"])
-                self.assertEqual(calls[5][1], ["flake", "check"])
+    def test_regenerate_uses_upstream_files_without_resolving_versions(self):
+        result = self.run_helper("update-gems")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.commands()
+        self.assertEqual([c[0] for c in calls],
+                         ["nix", "nix", "bundix", "nix", "nix", "nix"])
+        self.assertEqual(calls[2][1], [
+            f"--gemfile={self.source}/Gemfile",
+            f"--lockfile={self.source}/Gemfile.lock",
+            f"--gemset={self.repo}/nix/gems/gemset.nix",
+        ])
+        self.assertEqual(calls[2][2], str(self.repo))
+        self.assertEqual(calls[4][1], ["build", "--no-link", ".#lich-development-gems"])
+        self.assertEqual(calls[5][1], ["flake", "check"])
+        self.assertFalse((self.repo / "nix/gems/Gemfile").exists())
+        self.assertEqual((self.source / "Gemfile.lock").read_text(),
+                         "pinned upstream lockfile\n")
 
-    def test_release_uses_pinned_source_and_preserves_locked_versions(self):
+    def test_targeted_updates_are_rejected_before_running_tools(self):
+        result = self.run_helper("update-gems", "sqlite3")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("pinned by upstream", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_release_updates_pin_then_regenerates_from_upstream_lock(self):
         result = self.run_helper("update-lich-dependencies")
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = self.commands()
         self.assertEqual(calls[0][1], ["flake", "update", "lich-src"])
-        self.assertEqual(next(c[1] for c in calls if c[0] == "bundle"), ["lock"])
-        snapshot = self.repo / "nix/gems/Gemfile"
-        self.assertEqual(snapshot.read_text(), "pinned upstream Gemfile\n")
-        self.assertTrue(snapshot.stat().st_mode & 0o200)
-        self.assertFalse(any(c[0] == "git" for c in calls))
+        self.assertEqual(next(c[1] for c in calls if c[0] == "bundix")[1],
+                         f"--lockfile={self.source}/Gemfile.lock")
+        self.assertFalse(any(c[0] in ("bundle", "git") for c in calls))
 
-    def test_failed_resolution_stops_generation_and_builds(self):
-        self.env["FAIL_BUNDLE"] = "1"
-        result = self.run_helper("update-gems", "sqlite3")
+    def test_failed_generation_stops_builds(self):
+        self.env["FAIL_BUNDIX"] = "1"
+        result = self.run_helper("update-gems")
         self.assertEqual(result.returncode, 23)
-        self.assertEqual([c[0] for c in self.commands()], ["nix", "bundle"])
+        self.assertEqual([c[0] for c in self.commands()], ["nix", "nix", "bundix"])
 
     def test_sync_checkout_preserves_application_data(self):
         self.env["LICH_SRC_HOME"] = "/missing"

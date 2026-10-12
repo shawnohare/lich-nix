@@ -6,7 +6,8 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
     lich-src = {
-      url = "github:elanthia-online/lich-5?ref=v5.22.0";
+      # GitHub release archives omit Gemfile.lock via upstream's export-ignore.
+      url = "git+https://github.com/elanthia-online/lich-5?ref=refs/tags/v5.22.0&shallow=1";
       flake = false;
     };
   };
@@ -17,10 +18,8 @@
       pkgs = nixpkgs.legacyPackages.${system};
       lichBundix = pkgs.callPackage ./nix/bundix.nix { };
 
-      lichGems = pkgs.callPackage ./nix/lich-gems.nix { };
-      developmentGems = pkgs.callPackage ./nix/lich-gems.nix {
-        groups = [ "default" "gtk" "profanity" "development" "vscode" ];
-      };
+      lichGems = pkgs.callPackage ./nix/lich-gems.nix { inherit lich-src; };
+      developmentGems = lichGems.override { excludedGroups = [ ]; };
 
       fontsConf = pkgs.makeFontsConf {
         fontDirectories = [
@@ -125,8 +124,14 @@
           python3 ${./tests/test_maintenance_scripts.py}
           touch "$out"
         '';
-        upstream-gemfile = pkgs.runCommand "lich-upstream-gemfile" { } ''
-          cmp ${lich-src}/Gemfile ${./nix/gems/Gemfile}
+        upstream-gemset = pkgs.runCommand "lich-upstream-gemset-check" {
+          nativeBuildInputs = [ lichBundix ];
+        } ''
+          export HOME="$TMPDIR" BUNDLE_IGNORE_CONFIG=1
+          cp ${./nix/gems/gemset.nix} gemset.nix
+          chmod u+w gemset.nix
+          bundix --gemfile=${lich-src}/Gemfile --lockfile=${lich-src}/Gemfile.lock
+          cmp ${./nix/gems/gemset.nix} gemset.nix
           touch "$out"
         '';
         launcher = pkgs.runCommand "lich-launcher-check" {
