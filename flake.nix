@@ -103,7 +103,7 @@
           ];
 
           shellHook = ''
-            source ./bin/hook.sh
+            source ${./bin/hook.sh}
             unset BUNDLE_PATH BUNDLE_WITH BUNDLE_WITHOUT
             export BUNDLE_IGNORE_CONFIG=1
             export BUNDLE_FROZEN=1
@@ -116,6 +116,7 @@
         };
       };
 
+      # It's possible we want to just refactor to use pytest.
       checks.${system} = {
         maintenance-helpers = pkgs.runCommand "lich-maintenance-helpers-check" {
           nativeBuildInputs = [ pkgs.python3 pkgs.bash ];
