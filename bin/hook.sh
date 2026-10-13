@@ -4,22 +4,22 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 # For some reason lich doesn't expose a single config option for where it puts
 # user data. You have to pass in half a dozen args. Until it does, we'll let it
 # use its defaults.
-export LICH_DATA_HOME="${LICH_DATA_HOME:-${XDG_DATA_HOME}/lich-5}"
-export LICH_SRC_HOME="${LICH_SRC_HOME:-${LICH_DATA_HOME}}"
+export LICHNIX_DATA_HOME="${LICHNIX_DATA_HOME:-${XDG_DATA_HOME}/lichnix}"
+lich_checkout="$LICHNIX_DATA_HOME/packaged/lich-5"
 
 # Small wrapper to launch lich.
 lich() {
-    cd "${LICH_SRC_HOME}" || return 1
+    cd "${lich_checkout}" || return 1
     bundle exec ruby lich.rbw "$@"
 }
 
 # Headless lich wrapper
 lichh() {
-    cd "${LICH_SRC_HOME}" || return 1
+    cd "${lich_checkout}" || return 1
     bundle exec ruby lich.rbw --no-gtk "$@"
 }
 
 echo "Ruby: $(ruby --version)"
 echo "Bundler: $(bundle --version)"
-echo "LICH_SRC_HOME (lich.rbw): ${LICH_SRC_HOME}"
-echo "LICH_DATA_HOME (scripts, logs, etc.): ${LICH_DATA_HOME}"
+echo "Packaged checkout (lich.rbw): ${lich_checkout}"
+echo "LICHNIX_DATA_HOME: ${LICHNIX_DATA_HOME}"

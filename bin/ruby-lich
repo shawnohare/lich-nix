@@ -7,7 +7,7 @@ set -eu
 # Resolve the project directory relative to this script.
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-LICH_ROOT="$PROJECT_ROOT/upstream/lich-5"
+LICHNIX_ROOT="${LICHNIX_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/lichnix}/packaged/lich-5"
 
 
 if [ "$#" -eq 0 ]; then
@@ -15,12 +15,12 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-cd "$LICH_ROOT"
+cd "$LICHNIX_ROOT"
 
 # Run Ruby with the project's pinned Nix environment and gems.
 exec nix develop "$PROJECT_ROOT" --command \
   env \
-    BUNDLE_GEMFILE="$LICH_ROOT/Gemfile" \
+    BUNDLE_GEMFILE="$LICHNIX_ROOT/Gemfile" \
     BUNDLE_PATH="$PROJECT_ROOT/upstream/.bundle" \
     BUNDLE_WITHOUT=gtk \
     ruby -rbundler/setup "$@" --no-gtk

@@ -2,7 +2,7 @@
 # Small wrapper that exposes a "ruby executable" where ruby is using the
 # nix development environment. Intended to be used with front-ends like Saga.
 # Assumes that `nix develop` has been invoked. In particular, that saga has
-# been launched from the lich-nix development shell.
+# been launched from the lichnix development shell.
 
 set -eu
 
@@ -12,7 +12,8 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-cd "${LICH_SRC_HOME}"
+lich_checkout="${LICHNIX_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/lichnix}/packaged/lich-5"
+cd "$lich_checkout"
 
 # TODO: Could add all the data dir args to pass to lich here, but that seems
 # like a headache.

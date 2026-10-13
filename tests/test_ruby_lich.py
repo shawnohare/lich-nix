@@ -1,4 +1,4 @@
-"""Run after `nix build .#saga-ruby`: python3 tests/test_saga_ruby.py.
+"""Run after `nix build .#packaged`: python3 tests/test_ruby_lich.py.
 
 Launcher regression checks run without Nix on the executable search path:
 
@@ -18,13 +18,13 @@ import unittest
 
 
 LAUNCHER = Path(os.environ.get(
-    "SAGA_RUBY", str(Path(__file__).resolve().parents[1] / "result/bin/saga-ruby")
+    "RUBY_LICH", str(Path(__file__).resolve().parents[1] / "result/bin/ruby-lich")
 ))
 
 
 class LauncherTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="saga-ruby-")
+        self.temp = tempfile.TemporaryDirectory(prefix="ruby-lich-")
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
         self.env = {"HOME": str(self.home), "PATH": "/usr/bin:/bin"}
@@ -40,8 +40,11 @@ class LauncherTests(unittest.TestCase):
         )
 
     def install_fixture(self, checkout=None):
-        checkout = checkout or self.home / ".local/share/lich-5"
+        checkout = checkout or self.home / ".local/share/lichnix/packaged/lich-5"
         checkout.mkdir(parents=True)
+        (checkout / ".git").mkdir()
+        (checkout / "lich.rbw").write_text("# fixture\n")
+        (checkout / "Gemfile").write_text("# fixture\n")
         return checkout
 
     def test_version_without_nix_or_checkout(self):
@@ -49,12 +52,16 @@ class LauncherTests(unittest.TestCase):
             result = self.run_ruby(option)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("ruby 4.0.", result.stdout)
+            self.assertFalse((self.home / ".local/share/lichnix/packaged/lich-5").exists())
 
-    def test_missing_arguments_and_checkout(self):
+    def test_missing_arguments_and_invalid_destination(self):
         self.assertEqual(self.run_ruby().returncode, 2)
+        destination = self.home / ".local/share/lichnix/packaged/lich-5"
+        destination.mkdir(parents=True)
+        (destination / "user-data").write_text("keep me")
         result = self.run_ruby("lich.rbw")
         self.assertEqual(result.returncode, 1)
-        self.assertIn(str(self.home / ".local/share/lich-5"), result.stderr)
+        self.assertIn(str(self.home / ".local/share/lichnix/packaged/lich-5"), result.stderr)
 
     def test_arguments_environment_and_exit_status(self):
         checkout = self.install_fixture()
@@ -80,12 +87,27 @@ class LauncherTests(unittest.TestCase):
             for p in env["GI_TYPELIB_PATH"].split(":")
         ))
 
-    def test_checkout_environment_override(self):
-        checkout = self.install_fixture(self.home / "custom checkout")
-        self.env["LICH_SRC_HOME"] = str(checkout)
+    def test_data_root_override_ignores_writeable_source_override(self):
+        data_root = self.home / "custom data root"
+        checkout = self.install_fixture(data_root / "packaged/lich-5")
+        self.env["LICHNIX_DATA_HOME"] = str(data_root)
+        self.env["LICHNIX_WRITEABLE_SRC_HOME"] = "/missing/writeable"
+        self.env["LICHNIX_SRC_HOME"] = "/missing/obsolete"
         result = self.run_ruby("-e", 'puts Dir.pwd')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), str(checkout.resolve()))
+
+    def test_packaged_lich_uses_fixed_subdirectory(self):
+        data_root = self.home / "custom data root"
+        checkout = self.install_fixture(data_root / "packaged/lich-5")
+        (checkout / "lich.rbw").write_text('puts Dir.pwd; puts ARGV; exit 19')
+        self.env.update(LICHNIX_DATA_HOME=str(data_root),
+                        LICHNIX_WRITEABLE_SRC_HOME="/missing/writeable")
+        launcher = os.environ.get("LICH", str(LAUNCHER.parent / "lich"))
+        result = subprocess.run([launcher, "--example"], env=self.env,
+                                cwd="/", text=True, capture_output=True)
+        self.assertEqual(result.returncode, 19, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [str(checkout.resolve()), "--example"])
 
     def test_packaged_native_gems_with_empty_home_and_stale_config(self):
         checkout = self.install_fixture()

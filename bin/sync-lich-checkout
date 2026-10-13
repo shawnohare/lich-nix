@@ -5,18 +5,18 @@ set -euo pipefail
 # Use for initial setup or after update-lich-dependencies. Data stays in the clone;
 # no files are cleaned/reset, and tracked local edits block the switch.
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
-  echo "Usage: $0 [CHECKOUT_PATH]"
+  echo "Usage: $0"
   echo "Clone Lich if needed, then switch to the pinned commit, preserving application data."
   exit 0
 fi
-if [[ $# -gt 1 ]]; then
-  echo "Usage: $0 [CHECKOUT_PATH]" >&2
+if [[ $# -gt 0 ]]; then
+  echo "Usage: $0" >&2
   exit 2
 fi
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
-# Use the same environment variables and defaults as the Saga Ruby launcher.
-# An explicit command-line path takes precedence over the environment.
-checkout="${1:-${LICH_SRC_HOME:-${LICH_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/lich-5}}}"
+# Packaged source always lives below the shared project data root.
+export LICHNIX_DATA_HOME="${LICHNIX_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/lichnix}"
+checkout="$LICHNIX_DATA_HOME/packaged/lich-5"
 # Resolve relative paths against the caller's directory before entering the repo.
 if [[ $checkout != /* ]]; then
   checkout="$PWD/$checkout"

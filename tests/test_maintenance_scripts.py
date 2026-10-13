@@ -10,7 +10,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_BIN = Path(os.environ.get("LICH_MAINTENANCE_BIN", str(ROOT / "bin")))
+SCRIPT_BIN = Path(os.environ.get("LICHNIX_MAINTENANCE_BIN", str(ROOT / "bin")))
 SCRIPTS = ("check-runtime", "update-gems", "update-lich-dependencies", "sync-lich-checkout")
 
 
@@ -30,8 +30,9 @@ class MaintenanceTests(unittest.TestCase):
         (self.source / "Gemfile").chmod(0o444)
         (self.source / "Gemfile.lock").write_text("pinned upstream lockfile\n")
         (self.source / "Gemfile.lock").chmod(0o444)
-        self.checkout = self.base / "writable clone"
-        self.checkout.mkdir()
+        self.data_root = self.base / "data root"
+        self.checkout = self.data_root / "packaged/lich-5"
+        self.checkout.mkdir(parents=True)
         (self.checkout / ".git").mkdir()
         self.log = self.base / "commands.jsonl"
         fake_bin = self.base / "tools"
@@ -67,7 +68,8 @@ elif name == "git":
             tool.chmod(0o755)
         self.env = dict(os.environ, HOME=str(self.base),
                         PATH=f"{fake_bin}:{os.environ['PATH']}",
-                        COMMAND_LOG=str(self.log), PINNED_SOURCE=str(self.source))
+                        COMMAND_LOG=str(self.log), PINNED_SOURCE=str(self.source),
+                        LICHNIX_DATA_HOME=str(self.data_root))
 
     def run_helper(self, name, *args):
         # Run from outside the repository to verify script-relative paths.
@@ -118,10 +120,10 @@ elif name == "git":
         self.assertEqual([c[0] for c in self.commands()], ["nix", "nix", "bundix"])
 
     def test_sync_checkout_preserves_application_data(self):
-        self.env["LICH_SRC_HOME"] = "/missing"
+        self.env["LICHNIX_SRC_HOME"] = "/missing"
         data = self.checkout / "credentials.fixture"
         data.write_text("local application data")
-        result = self.run_helper("sync-lich-checkout", str(self.checkout))
+        result = self.run_helper("sync-lich-checkout")
         self.assertEqual(result.returncode, 0, result.stderr)
         git_args = [c[1][2:] for c in self.commands() if c[0] == "git"]
         self.assertEqual(git_args[-2:], [["fetch", "--tags"],
@@ -130,25 +132,28 @@ elif name == "git":
 
     def test_dirty_checkout_stops_before_fetch_or_switch(self):
         self.env["DIRTY_CHECKOUT"] = "1"
-        result = self.run_helper("sync-lich-checkout", str(self.checkout))
+        result = self.run_helper("sync-lich-checkout")
         self.assertEqual(result.returncode, 1)
         self.assertIn("Commit or stash", result.stderr)
         self.assertEqual([c[1][2] for c in self.commands()], ["rev-parse", "diff"])
 
-    def test_sync_uses_checkout_environment(self):
-        self.env["LICH_SRC_HOME"] = str(self.checkout)
+    def test_sync_uses_data_root_ignoring_writeable_source(self):
+        self.env["LICHNIX_WRITEABLE_SRC_HOME"] = "/missing/writeable"
+        self.env["LICHNIX_SRC_HOME"] = "/missing/obsolete"
         result = self.run_helper("sync-lich-checkout")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.commands()[0][1][:2], ["-C", str(self.checkout)])
 
     def test_sync_clones_missing_or_empty_destination(self):
-        for destination in (self.base / "new parent/new clone", self.base / "empty clone"):
+        for data_root in (self.base / "new parent", self.base / "empty root"):
+            destination = data_root / "packaged/lich-5"
             with self.subTest(destination=destination):
-                if destination.name == "empty clone":
-                    destination.mkdir()
+                if data_root.name == "empty root":
+                    destination.mkdir(parents=True)
                 self.log.write_text("")
                 # Relative paths are interpreted from the caller's working directory.
-                result = self.run_helper("sync-lich-checkout", str(destination.relative_to(self.base)))
+                self.env["LICHNIX_DATA_HOME"] = str(data_root.relative_to(self.base))
+                result = self.run_helper("sync-lich-checkout")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 calls = self.commands()
                 self.assertEqual(calls[0][1], ["clone", "--",
@@ -157,11 +162,12 @@ elif name == "git":
                 self.assertTrue((destination / ".git").is_dir())
 
     def test_sync_refuses_nonempty_directory_without_repository(self):
-        destination = self.base / "existing data"
-        destination.mkdir()
+        self.env["LICHNIX_DATA_HOME"] = str(self.base / "existing data")
+        destination = self.base / "existing data/packaged/lich-5"
+        destination.mkdir(parents=True)
         data = destination / "credentials.fixture"
         data.write_text("keep this data")
-        result = self.run_helper("sync-lich-checkout", str(destination))
+        result = self.run_helper("sync-lich-checkout")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(data.read_text(), "keep this data")
         self.assertEqual(len(self.commands()), 1)
