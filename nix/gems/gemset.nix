@@ -794,13 +794,17 @@
   };
   win32ole = {
     groups = ["default"];
-    platforms = [{
-      engine = "mingw";
-    } {
-      engine = "mswin";
-    } {
-      engine = "mswin64";
-    }];
+    platforms = [
+      {
+        engine = "mingw";
+      }
+      {
+        engine = "mswin";
+      }
+      {
+        engine = "mswin64";
+      }
+    ];
     source = {
       remotes = ["https://rubygems.org"];
       sha256 = "15jdx4cd2g4spi50g2gad1cxiwr89a5m6kr0b1p6x00kvk2kvx01";

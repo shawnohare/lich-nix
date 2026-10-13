@@ -10,7 +10,7 @@ fi
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)"
 cd "$PROJECT_ROOT"
 
-nix build .#saga-ruby
+nix build .#ruby-lich
 # Development gems need verification too, but must not replace result or
 # create a second result symlink beside the launcher.
 nix build --no-link .#lich-development-gems

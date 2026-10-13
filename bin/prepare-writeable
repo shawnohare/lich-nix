@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Convenience entry point for local development. The packaged helper also works
+# via `nix run github:shawnohare/lichnix#prepare-writeable -- CHECKOUT_PATH`.
+# It runs `bundle install` in the chosen checkout using the Nix Ruby/native
+# environment, retaining the upstream lock where possible. See README for the
+# equivalent manual command and environment settings.
+PROJECT_ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)"
+exec nix run "$PROJECT_ROOT#prepare-writeable" -- "$@"

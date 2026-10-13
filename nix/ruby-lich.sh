@@ -2,8 +2,8 @@
 set -eu
 
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-export LICH_DATA_HOME="${LICH_DATA_HOME:-$XDG_DATA_HOME/lich-5}"
-export LICH_SRC_HOME="${LICH_SRC_HOME:-$LICH_DATA_HOME}"
+export LICHNIX_DATA_HOME="${LICHNIX_DATA_HOME:-$XDG_DATA_HOME/lichnix}"
+checkout="$LICHNIX_DATA_HOME/packaged/lich-5"
 # Always use the packaged dependency set, including for Finder launches.
 # Ignore stale bundle configuration in the checkout or user's home.
 unset BUNDLE_PATH BUNDLE_WITH BUNDLE_WITHOUT
@@ -21,14 +21,10 @@ if [ "$#" -eq 1 ]; then
   esac
 fi
 if [ "$#" -eq 0 ]; then
-  echo "Usage: saga-ruby [Ruby options] PATH_TO_LICH_RBW [arguments...]" >&2
+  echo "Usage: ruby-lich [Ruby options] PATH_TO_LICH_RBW [arguments...]" >&2
   exit 2
 fi
-if [ ! -d "$LICH_SRC_HOME" ]; then
-  echo "saga-ruby: Lich directory not found: $LICH_SRC_HOME" >&2
-  echo "Install Lich, or set LICH_SRC_HOME in the launch environment." >&2
-  exit 1
-fi
+@prepare@
 
-cd "$LICH_SRC_HOME"
+cd "$checkout"
 exec @ruby@ -rbundler/setup "$@"
