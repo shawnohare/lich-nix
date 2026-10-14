@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 
@@ -40,11 +41,10 @@ class LauncherTests(unittest.TestCase):
         )
 
     def install_fixture(self, checkout=None):
-        checkout = checkout or self.home / ".local/share/lichnix/packaged/lich-5"
-        checkout.mkdir(parents=True)
-        (checkout / ".git").mkdir()
-        (checkout / "lich.rbw").write_text("# fixture\n")
-        (checkout / "Gemfile").write_text("# fixture\n")
+        checkout = checkout or self.home / ".local/share/lichnix/runtime"
+        result = self.run_ruby('-e', 'exit')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((checkout / 'lich.rbw').is_file())
         return checkout
 
     def test_version_without_nix_or_checkout(self):
@@ -52,16 +52,17 @@ class LauncherTests(unittest.TestCase):
             result = self.run_ruby(option)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("ruby 4.0.", result.stdout)
-            self.assertFalse((self.home / ".local/share/lichnix/packaged/lich-5").exists())
+            self.assertFalse((self.home / ".local/share/lichnix/runtime").exists())
 
     def test_missing_arguments_and_invalid_destination(self):
         self.assertEqual(self.run_ruby().returncode, 2)
-        destination = self.home / ".local/share/lichnix/packaged/lich-5"
+        destination = self.home / ".local/share/lichnix/runtime"
         destination.mkdir(parents=True)
-        (destination / "user-data").write_text("keep me")
+        (destination / "lich.rbw").write_text("keep me")
         result = self.run_ruby("lich.rbw")
         self.assertEqual(result.returncode, 1)
-        self.assertIn(str(self.home / ".local/share/lichnix/packaged/lich-5"), result.stderr)
+        self.assertIn(str(destination), result.stderr)
+        self.assertEqual((destination / 'lich.rbw').read_text(), 'keep me')
 
     def test_arguments_environment_and_exit_status(self):
         checkout = self.install_fixture()
@@ -89,8 +90,8 @@ class LauncherTests(unittest.TestCase):
 
     def test_data_root_override_ignores_writeable_source_override(self):
         data_root = self.home / "custom data root"
-        checkout = self.install_fixture(data_root / "packaged/lich-5")
         self.env["LICHNIX_DATA_HOME"] = str(data_root)
+        checkout = self.install_fixture(data_root / "runtime")
         self.env["LICHNIX_WRITEABLE_SRC_HOME"] = "/missing/writeable"
         self.env["LICHNIX_SRC_HOME"] = "/missing/obsolete"
         result = self.run_ruby("-e", 'puts Dir.pwd')
@@ -99,15 +100,85 @@ class LauncherTests(unittest.TestCase):
 
     def test_packaged_lich_uses_fixed_subdirectory(self):
         data_root = self.home / "custom data root"
-        checkout = self.install_fixture(data_root / "packaged/lich-5")
-        (checkout / "lich.rbw").write_text('puts Dir.pwd; puts ARGV; exit 19')
         self.env.update(LICHNIX_DATA_HOME=str(data_root),
                         LICHNIX_WRITEABLE_SRC_HOME="/missing/writeable")
+        checkout = data_root / 'runtime'
         launcher = os.environ.get("LICH", str(LAUNCHER.parent / "lich"))
-        result = subprocess.run([launcher, "--example"], env=self.env,
+        result = subprocess.run([launcher, "--version"], env=self.env,
                                 cwd="/", text=True, capture_output=True)
-        self.assertEqual(result.returncode, 19, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), [str(checkout.resolve()), "--example"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('The Lich, version 5.22.0', result.stdout)
+        self.assertTrue(str((checkout / 'lich.rbw').resolve()).startswith('/nix/store/'))
+        self.assertTrue(str((checkout / 'lib').resolve()).startswith('/nix/store/'))
+
+    def test_raw_children_inherit_layout_and_bundle(self):
+        checkout = self.install_fixture()
+        installed = (checkout / 'lich.rbw').resolve().parent
+        package = self.home / 'fixture package with spaces'
+        shutil.copytree(installed, package)
+        # Exercise the real upstream argument/constant initialization and session
+        # launcher, then stop before login/GTK. No store file is changed.
+        upstream = (package / 'upstream.rbw').read_text()
+        prefix = upstream.split("require File.join(LIB_DIR, 'gemcheck.rb')")[0]
+        (package / 'upstream.rbw').chmod(0o644)
+        (package / 'upstream.rbw').write_text(prefix + '''
+require 'json'
+require 'rbconfig'
+require File.join(LIB_DIR, 'util', 'util.rb')
+require File.join(LIB_DIR, 'common', 'session_launcher.rb')
+if ARGV.include?('--spawn')
+  flags = Lich::Common::SessionLauncher.send(:optional_spawn_flags, {})
+  exec RbConfig.ruby, $PROGRAM_NAME, '--child', *flags
+end
+puts JSON.generate([LICH_DIR, LIB_DIR, DATA_DIR, SCRIPT_DIR, TEMP_DIR,
+                    MAP_DIR, LOG_DIR, BACKUP_DIR, ACTIVE_SESSION_DIR,
+                    Gem.loaded_specs.fetch('sqlite3').full_gem_path, ARGV])
+''')
+        (package / 'upstream.rbw').chmod(0o444)
+        alternate = self.home / 'alternate runtime'
+        paths = {name: self.home / ('custom ' + name) for name in
+                 ('data', 'scripts', 'temp', 'maps', 'logs', 'backup', 'active-session-dir')}
+        flags = ['--home=' + str(alternate)] + [f'--{name}={path}' for name, path in paths.items()]
+        for mode in ('--direct', '--spawn'):
+            result = self.run_ruby(str(package / 'lich.rbw'), mode, *flags)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            values = json.loads(result.stdout.splitlines()[-1])
+            self.assertEqual(values[:9], [str(alternate), str(package / 'lib'),
+                                        *map(str, paths.values())])
+            self.assertTrue(values[9].startswith('/nix/store/'))
+            self.assertIn('self-update/rollback', result.stderr)
+            self.assertTrue((alternate / 'lich.rbw').is_file())
+        # Home-relative entry point used by elogin, with inherited environment.
+        result = self.run_ruby(str(alternate / 'lich.rbw'), '--child', '--home=' + str(alternate))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_real_core_initializes_with_store_source_and_writable_database(self):
+        checkout = self.install_fixture()
+        package = (checkout / 'lich.rbw').resolve().parent
+        lines = (package / 'upstream.rbw').read_text().splitlines()
+        stop_line = lines.index("require File.join(LIB_DIR, 'main', 'main.rb')") + 1
+        preload = self.home / 'stop before login.rb'
+        preload.write_text('''
+require 'json'
+probe = TracePoint.new(:line) do |event|
+  if event.path == ENV.fetch('PROBE_UPSTREAM') && event.lineno == Integer(ENV.fetch('PROBE_LINE'))
+    probe.disable
+    raise 'database not writable' unless Lich.db.get_first_value('select 42') == 42
+    STDOUT.puts JSON.generate([LICH_DIR, LIB_DIR, DATA_DIR, Dir.pwd])
+    STDOUT.flush
+    exit! 0
+  end
+end
+probe.enable
+''')
+        self.env.update(PROBE_UPSTREAM=str(package / 'upstream.rbw'), PROBE_LINE=str(stop_line))
+        result = self.run_ruby('-r', str(preload), str(checkout / 'lich.rbw'), '--no-gtk')
+        debug = '\n'.join(p.read_text(errors='replace') for p in (checkout / 'temp').glob('*.log'))
+        self.assertEqual(result.returncode, 0, result.stderr + debug)
+        self.assertEqual(json.loads(result.stdout.splitlines()[-1]),
+                         [str(checkout), str(package / 'lib'), str(checkout / 'data'), str(checkout)])
+        self.assertTrue((checkout / 'data/lich.db3').is_file())
+        self.assertTrue(str(package).startswith('/nix/store/'))
 
     def test_packaged_native_gems_with_empty_home_and_stale_config(self):
         checkout = self.install_fixture()

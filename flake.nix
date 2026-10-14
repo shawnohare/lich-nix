@@ -6,7 +6,7 @@
 
     lich-src = {
       # GitHub release archives omit Gemfile.lock via upstream's export-ignore.
-      url = "git+https://github.com/elanthia-online/lich-5?ref=refs/tags/v5.22.0&shallow=1";
+      url = "git+https://github.com/elanthia-online/lich-5?rev=80e6b366cd865e80afa112ae10468cf45e769ed7&shallow=1";
       flake = false;
     };
   };
@@ -30,12 +30,13 @@
       ];
     };
 
+    lichSource = pkgs.callPackage ./nix/lich-source.nix {inherit lich-src;};
     packagedSetup = pkgs.writeShellApplication {
       name = "ensure-packaged";
-      runtimeInputs = [pkgs.git pkgs.coreutils];
+      runtimeInputs = [];
       text =
-        pkgs.lib.replaceStrings ["@lichRev@"]
-        [lich-src.rev] (builtins.readFile ./nix/ensure-packaged.sh);
+        pkgs.lib.replaceStrings ["@ruby@" "@source@"]
+        ["${pkgs.ruby_4_0}/bin/ruby" "${lichSource}/share/lich-5"] (builtins.readFile ./nix/ensure-packaged.sh);
     };
     rubyLich = pkgs.callPackage ./nix/ruby-lich.nix {
       inherit fontsConf lichGems packagedSetup;
@@ -43,8 +44,8 @@
 
     writeable = import ./nix/writeable.nix {inherit pkgs fontsConf toolchain lich-src;};
     packagedLich = pkgs.writeShellScriptBin "lich" (pkgs.lib.replaceStrings
-      ["@launcher@" "@mode@" "@prepare@"]
-      ["${rubyLich}" "packaged" "${packagedSetup}/bin/ensure-packaged"] (builtins.readFile ./nix/lich.sh));
+      ["@launcher@" "@mode@" "@prepare@" "@rubyProgram@"]
+      ["${rubyLich}" "packaged" "${packagedSetup}/bin/ensure-packaged" "ruby-lich"] (builtins.readFile ./nix/lich.sh));
     packaged = pkgs.symlinkJoin {
       name = "lich-packaged";
       paths = [rubyLich packagedLich];
@@ -59,7 +60,10 @@
       default = rubyLich;
       lich = packagedLich;
       inherit packaged;
+      lich-source = lichSource;
       writeable = writeable.package;
+      ruby-lich-w = writeable.ruby;
+      lich-w = writeable.lich;
       prepare-writeable = writeable.prepare;
     };
 
@@ -74,7 +78,15 @@
       };
       writeable = {
         type = "app";
-        program = "${writeable.package}/bin/lich";
+        program = "${writeable.package}/bin/lich-w";
+      };
+      lich-w = {
+        type = "app";
+        program = "${writeable.lich}/bin/lich-w";
+      };
+      ruby-lich-w = {
+        type = "app";
+        program = "${writeable.ruby}/bin/ruby-lich-w";
       };
       prepare-writeable = {
         type = "app";
@@ -102,7 +114,7 @@
           pkgs.lib.replaceStrings
           ["@launcher@" "@preload@" "@defaultGems@"]
           [
-            "${writeable.ruby}/bin/ruby-lich"
+            "${writeable.ruby}/bin/ruby-lich-w"
             "${./nix/gem-user-dir.rb}"
             "${pkgs.ruby_4_0}/${pkgs.ruby_4_0.gemPath}"
           ]
@@ -115,7 +127,6 @@
           ++ toolchain.libraries ++ toolchain.assets;
 
         shellHook = ''
-          source ${./bin/hook.sh}
           unset BUNDLE_PATH BUNDLE_WITH BUNDLE_WITHOUT
           export BUNDLE_IGNORE_CONFIG=1
           export BUNDLE_FROZEN=1
@@ -124,6 +135,9 @@
           export GEM_PATH="$GEM_HOME"
           export FONTCONFIG_FILE="${fontsConf}"
           export LICHNIX_REV="${lich-src.rev}"
+          ${packagedSetup}/bin/ensure-packaged
+          export LICHNIX_PACKAGED_ENTRY="${lichSource}/share/lich-5/lich.rbw"
+          source ${./bin/hook.sh}
         '';
       };
     };
@@ -154,8 +168,8 @@
         '';
       packaged-preparation =
         pkgs.runCommand "lich-packaged-preparation-check" {
-          nativeBuildInputs = [pkgs.python3 pkgs.bash pkgs.git pkgs.coreutils];
-          PACKAGED_TEMPLATE = "${./nix/ensure-packaged.sh}";
+          nativeBuildInputs = [pkgs.python3 pkgs.ruby_4_0];
+          PACKAGED_STATE = "${./nix/packaged-state.rb}";
         } ''
           python3 ${./tests/test_packaged_preparation.py}
           touch "$out"
@@ -171,8 +185,8 @@
       writeable-launcher =
         pkgs.runCommand "lich-writeable-launcher-check" {
           nativeBuildInputs = [pkgs.python3];
-          RUBY_LICH = "${writeable.ruby}/bin/ruby-lich";
-          LICH = "${writeable.lich}/bin/lich";
+          RUBY_LICH = "${writeable.ruby}/bin/ruby-lich-w";
+          LICH = "${writeable.lich}/bin/lich-w";
         } ''
           python3 ${./tests/test_writeable_runtime.py}
           touch "$out"

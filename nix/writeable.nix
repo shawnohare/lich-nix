@@ -37,15 +37,16 @@
   ruby = pkgs.callPackage ./gtk-launcher.nix {
     inherit fontsConf;
     script = rubyScript;
+    program = "ruby-lich-w";
     pathPackages = toolchain.buildTools;
   };
   lich =
-    pkgs.writeShellScriptBin "lich" (lib.replaceStrings
-      ["@launcher@" "@mode@" "@prepare@"] ["${ruby}" "writeable" "true"] (builtins.readFile ./lich.sh));
+    pkgs.writeShellScriptBin "lich-w" (lib.replaceStrings
+      ["@launcher@" "@mode@" "@prepare@" "@rubyProgram@"] ["${ruby}" "writeable" "true" "ruby-lich-w"] (builtins.readFile ./lich.sh));
   runtime = pkgs.symlinkJoin {
     name = "lich-writeable-runtime";
     paths = [ruby lich];
-    meta.mainProgram = "lich";
+    meta.mainProgram = "lich-w";
   };
   prepare = pkgs.writeShellApplication {
     name = "prepare-writeable";
@@ -59,6 +60,6 @@ in {
   package = pkgs.symlinkJoin {
     name = "lich-writeable";
     paths = [runtime prepare];
-    meta.mainProgram = "lich";
+    meta.mainProgram = "lich-w";
   };
 }

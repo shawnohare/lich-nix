@@ -27,7 +27,7 @@ class WriteablePreparation(unittest.TestCase):
         self.runtime = self.root / 'runtime'
         (self.runtime / 'bin').mkdir(parents=True)
         self.log = self.root / 'runtime-calls'
-        ruby = self.runtime / 'bin/ruby-lich'
+        ruby = self.runtime / 'bin/ruby-lich-w'
         ruby.write_text('''#!/usr/bin/env bash
 set -eu
 printf '%s\\n' "$*" >> "$TEST_RUNTIME_LOG"
@@ -66,7 +66,10 @@ fi
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.git('-C', str(self.checkout), 'rev-parse', 'HEAD').stdout.strip(), self.pin)
         self.assertEqual(self.git('-C', str(self.checkout), 'rev-parse', '--abbrev-ref', 'HEAD').stdout.strip(), 'HEAD')
-        self.assertTrue((self.checkout / '.bundle/bin/ruby-lich').is_file())
+        self.assertTrue((self.checkout / '.bundle/bin/ruby-lich-w').is_file())
+        self.assertTrue((self.checkout / '.bundle/bin/lich-w').is_file())
+        self.assertFalse((self.checkout / '.bundle/bin/ruby-lich').exists())
+        self.assertFalse((self.checkout / '.bundle/bin/lich').exists())
         self.assertIn('-S bundle install', self.log.read_text())
 
     def test_default_writeable_location_uses_data_root(self):
@@ -75,9 +78,9 @@ fi
         self.env['LICHNIX_DATA_HOME'] = str(data_root)
         result = self.prepare(explicit_path=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        checkout = data_root / 'writeable/lich-5'
+        checkout = data_root / 'src/lich-5'
         self.assertEqual(self.git('-C', str(checkout), 'rev-parse', 'HEAD').stdout.strip(), self.pin)
-        launcher = (checkout / '.bundle/bin/ruby-lich').read_text()
+        launcher = (checkout / '.bundle/bin/ruby-lich-w').read_text()
         self.assertIn('LICHNIX_WRITEABLE_SRC_HOME=', launcher)
 
     def test_existing_checkout_keeps_revision_and_edits(self):

@@ -3,9 +3,9 @@ set -eu
 
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export LICHNIX_DATA_HOME="${LICHNIX_DATA_HOME:-$XDG_DATA_HOME/lichnix}"
-checkout="$LICHNIX_DATA_HOME/packaged/lich-5"
+checkout="$LICHNIX_DATA_HOME/runtime"
 # Always use the packaged dependency set, including for Finder launches.
-# Ignore stale bundle configuration in the checkout or user's home.
+# Ignore stale bundle configuration in the runtime home or user's home.
 unset BUNDLE_PATH BUNDLE_WITH BUNDLE_WITHOUT
 export BUNDLE_IGNORE_CONFIG=1
 export BUNDLE_FROZEN=1
@@ -14,7 +14,7 @@ export BUNDLE_GEMFILE="@gemfile@"
 export GEM_HOME="@gemhome@"
 export GEM_PATH="$GEM_HOME"
 
-# Let frontends probe Ruby without requiring an installed checkout.
+# Let frontends probe Ruby without preparing application state.
 if [ "$#" -eq 1 ]; then
   case "$1" in
     --version|-v) exec @ruby@ "$@" ;;

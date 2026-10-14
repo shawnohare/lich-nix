@@ -12,10 +12,8 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-lich_checkout="${LICHNIX_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/lichnix}/packaged/lich-5"
+lich_checkout="${LICHNIX_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/lichnix}/runtime"
 cd "$lich_checkout"
 
-# TODO: Could add all the data dir args to pass to lich here, but that seems
-# like a headache.
-export BUNDLE_WITHOUT=gtk
+# Keep the packaged bundle intact; select headless behavior in Lich.
 exec ruby -rbundler/setup "$@" --no-gtk

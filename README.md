@@ -5,7 +5,7 @@ A Nix development environment and standalone Ruby launcher for running
 and game proxy for Simutronics' Gemstone IV and DragonRealms.
 
 This project started as a mechanism for a Nix user to easily get started using
-Lich. Interfaces and overarching goals are still under revision,
+Lich. Interfaces and overarching goals are still under revision.
 
 Targets Apple Silicon macOS (`aarch64-darwin`) with Ruby 4.0 and
 tested against Lich v5.22.0. GTK dependencies successfully build and Lich GUI
@@ -15,12 +15,13 @@ runs and can be utilized by Saga.
 ## Choose a gem mode
 
 Both modes supply Ruby 4.0, GTK, and native dependencies on Apple Silicon macOS.
-Lich source and application data stay in a writable checkout.
+Writeable mode uses a writable checkout. Packaged mode keeps Lich core source
+in the Nix store and application state in a writable runtime home.
 
 | Mode | Gems | Source |
 |---|---|---|
 | `writeable` | Bundler installs writable gems; scripts may add gems | Your chosen Lich checkout and its Gemfile/lockfile |
-| `packaged` | Immutable gems built by Nix | Checkout matching the flake's pinned Lich revision |
+| `packaged` | Immutable gems built by Nix | Immutable core at the flake's pinned Lich revision |
 
 Existing `nix develop` and `ruby-lich` packages keep using packaged gems.
 Writeable mode is an explicit choice. It supports other Lich versions when they
@@ -38,7 +39,7 @@ You need Nix with flakes enabled and Git. From this repository:
 ```sh
 export LICHNIX_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/lichnix"
 nix run .#prepare-writeable
-"$LICHNIX_DATA_HOME/writeable/lich-5/.bundle/bin/lich" --version
+"$LICHNIX_DATA_HOME/src/lich-5/.bundle/bin/lich-w" --version
 ```
 This will clone the Lich 5 source if it is not already.
 
@@ -62,9 +63,9 @@ Use a branch/revision containing this feature until it reaches the default branc
 The helper installs the checkout's bundle, checks SQLite and GTK, retains the
 Nix runtime/toolchain against garbage collection, and writes these executables:
 
-- `<checkout>/.bundle/bin/lich`: starts `lich.rbw` in that checkout; pass Lich
+- `<checkout>/.bundle/bin/lich-w`: starts `lich.rbw` in that checkout; pass Lich
   arguments such as `--no-gtk` or `--login CHARACTER`.
-- `<checkout>/.bundle/bin/ruby-lich`: acts like Ruby, retaining the caller's
+- `<checkout>/.bundle/bin/ruby-lich-w`: acts like Ruby, retaining the caller's
   working directory and forwarding its arguments. In Saga, use its absolute
   path as the Ruby executable, and select the checkout as the Lich folder.
 
@@ -120,9 +121,9 @@ The commands the helper runs **inside the Lich checkout** are:
 ```sh
 cd "$LICHNIX_WRITEABLE_SRC_HOME"
 BUNDLE_PATH__SYSTEM=true BUNDLE_FORCE_RUBY_PLATFORM=1 \
-  BUNDLE_WITHOUT=development:vscode ruby-lich -S bundle install
-ruby-lich -e 'require "sqlite3"; require "gtk3"; GObjectIntrospection::Repository.default.require("Gtk", "3.0")'
-lich --version
+  BUNDLE_WITHOUT=development:vscode ruby-lich-w -S bundle install
+ruby-lich-w -e 'require "sqlite3"; require "gtk3"; GObjectIntrospection::Repository.default.require("Gtk", "3.0")'
+lich-w --version
 ```
 
 `BUNDLE_PATH__SYSTEM=true` tells Bundler to install into this launcher's
@@ -143,13 +144,19 @@ The checkout's lockfile governs initial Bundler installation, rather than
 restricting every runtime `require`. Upstream repair/update and game login
 still need manual end-to-end verification.
 
-## Packaged mode: use the pinned gems
+## Packaged mode: use pinned Lich and gems
 
-The packaged mode is a bit more self-contained. The Ruby Gems are immutable and
-Lich source tied to a specific revision. Scripts that require additional Gems
-will fail unless that Gem is accounted for in the flake. Lich runtime is
-generally more constrained. Features like Lich update and Gem repair will
-likely generally fail.
+The package contains Lich core at audited commit
+`80e6b366cd865e80afa112ae10468cf45e769ed7` (5.22.0), Ruby, gems, and GTK
+runtime configuration. It creates its writable runtime home offline, without
+cloning a Git repository. Scripts that need additional gems require adding those
+dependencies to the Nix package and rebuilding.
+
+Lich self-update, core rollback, engine replacement, gem repair/refresh, and
+runtime gem additions are unsupported. Normal startup warns about these limits;
+the package does not intercept those commands. They may attempt downloads or
+writes and fail. Upgrade/rebuild or roll back the Nix package instead. Script
+downloads, maps, logs, settings, and data synchronization remain writable.
 
 From this repository:
 
@@ -168,12 +175,12 @@ nix profile add github:shawnohare/lichnix#packaged
 lich --version
 ```
 
-The packaged `ruby-lich` also initializes the checkout when it runs a script;
+The packaged `ruby-lich` also initializes the runtime home when it runs a script;
 Ruby-only probes (`--version` or `-v`) do not trigger setup. Run `lich --version`
 once before selecting the Lich folder in Saga, so the folder already exists.
-For a later flake release bump, explicitly run `bin/sync-lich-checkout` to switch
-an existing checkout to the new pin; it refuses tracked local edits.
-For Saga, select `$LICHNIX_DATA_HOME/packaged/lich-5` as the Lich folder
+A new package selects its new core on launch while preserving existing runtime
+files. Package rollback does not roll back user data or downloaded scripts.
+For Saga, select `$LICHNIX_DATA_HOME/runtime` as the Lich folder
 and the absolute path to
 `result/bin/ruby-lich` or `~/.nix-profile/bin/ruby-lich` as the Ruby executable.
 Expand `~` to your full home directory. If needed, enable Saga's
@@ -191,35 +198,61 @@ repair cannot write to the Nix store.
 `LICHNIX_DATA_HOME` is the shared project data root, defaulting to
 `${XDG_DATA_HOME:-$HOME/.local/share}/lichnix`.
 
-| Mode | Default checkout | Source override |
+| Mode | Default writable directory | Source override |
 |---|---|---|
-| Writeable | `$LICHNIX_DATA_HOME/writeable/lich-5` | `LICHNIX_WRITEABLE_SRC_HOME` or the helper's checkout argument |
-| Packaged | `$LICHNIX_DATA_HOME/packaged/lich-5` | None; change `LICHNIX_DATA_HOME` to relocate the whole project layout |
+| Writeable | `$LICHNIX_DATA_HOME/src/lich-5` | `LICHNIX_WRITEABLE_SRC_HOME` or the helper's checkout argument |
+| Packaged | `$LICHNIX_DATA_HOME/runtime` | None; change `LICHNIX_DATA_HOME` to relocate the whole project layout |
 
-With defaults, these are `~/.local/share/lichnix/writeable/lich-5` and
-`~/.local/share/lichnix/packaged/lich-5`. Gems and saved launchers for writeable
+With defaults, these are `~/.local/share/lichnix/src/lich-5` and
+`~/.local/share/lichnix/runtime`. Gems and saved launchers for writeable
 mode stay under its checkout's `.bundle`. Packaged gems remain in the Nix store.
 
-Existing checkouts are not moved automatically. For writeable mode, point
+Existing state and checkouts are not moved automatically. If you already used
+`$LICHNIX_DATA_HOME/packaged/runtime`, stop Lich sessions and move that directory
+to `$LICHNIX_DATA_HOME/runtime` before launching the updated package, provided
+the new destination does not already exist. This preserves maps, settings,
+scripts, and saved logins. Update Saga's Lich folder to the new runtime path.
+
+For writeable mode, you can move the old `$LICHNIX_DATA_HOME/writeable/lich-5`
+checkout to `$LICHNIX_DATA_HOME/src/lich-5` while sessions are stopped, then rerun
+`prepare-writeable` to refresh its gem paths and saved launchers. Alternatively, point
 `LICHNIX_WRITEABLE_SRC_HOME` at your existing checkout and rerun preparation.
 If you previously used native mode, replace `LICHNIX_NATIVE_SRC_HOME` with
 `LICHNIX_WRITEABLE_SRC_HOME` and run `prepare-writeable` for that checkout.
 This also lets you keep a checkout at the former `native/lich-5` path.
-For packaged mode, move an existing checkout into
-`$LICHNIX_DATA_HOME/packaged/lich-5`, or let the first packaged launch create it.
+The former packaged checkout at `$LICHNIX_DATA_HOME/packaged/lich-5` is left
+untouched. For migration, stop existing sessions, back up that checkout, and copy
+the contents of its `data`, `scripts`, `maps`, `logs`, `backup`, and `temp`
+directories into the corresponding new runtime directories before first launch.
+Copy any additional script-owned assets you need. Do not copy `lib`, `lich.rbw`,
+or `.bundle`: the new runtime manages its entry point and core-library links.
 The old `LICHNIX_SRC_HOME` setting is no longer used. To keep writeable source
 in this repository, use `export LICHNIX_WRITEABLE_SRC_HOME="$PWD/upstream/lich-5"`.
 
-Lich keeps source and mutable application data together. The `lich` executable
-changes into the selected checkout; writeable `ruby-lich` preserves the caller's working
+Writeable mode keeps source and mutable data together. The `lich-w` executable
+changes into its checkout; `ruby-lich-w` preserves the caller's working
 directory, as Ruby does. The existing packaged `ruby-lich` changes into the
-checkout before running Ruby. Generic profile/build launchers use environment
+runtime home before running Ruby. Generic profile/build launchers use environment
 variables at launch time. For custom writeable paths in Finder, use the helper's
-checkout-bound launchers. Install one mode into a profile at a time because
-both expose the same executable names.
+checkout-bound launchers. The profile launchers use the default checkout or
+`LICHNIX_WRITEABLE_SRC_HOME`; they require that checkout to be prepared first.
 
-See [docs/gem_modes.md](docs/gem_modes.md) for the implementation layout and
-validation details.
+Both modes can be installed in the same profile:
+
+```sh
+nix profile add .#packaged .#writeable
+```
+
+Packaged executables are `lich` and `ruby-lich`; writeable executables are
+`lich-w` and `ruby-lich-w`. Individual writeable launchers are also available as
+`.#lich-w` and `.#ruby-lich-w`. For Saga with the default writeable checkout,
+select `$LICHNIX_DATA_HOME/src/lich-5` as the Lich folder and the absolute path
+to `~/.nix-profile/bin/ruby-lich-w` as Ruby. For a custom checkout in Finder,
+use its `.bundle/bin/ruby-lich-w` launcher, which remembers the chosen paths.
+
+See [docs/packaged_lich.md](docs/packaged_lich.md) for the packaged source/state
+boundary and verification limits, and [docs/gem_modes.md](docs/gem_modes.md)
+for gem-mode background.
 
 ## Maintaining Ruby dependencies (packaged mode)
 
@@ -231,11 +264,11 @@ comments describing its commands and the files it changes.
   Gem versions follow upstream; this helper does not resolve new versions or
   accept individual gem names.
 - [`bin/update-lich-dependencies`](bin/update-lich-dependencies) handles a Lich
-  release bump. First edit the tag in `inputs.lich-src.url` in `flake.nix`, then
+  release bump. First edit the revision in `inputs.lich-src.url` in `flake.nix`, then
   run this helper. It updates the Lich input lock and runs `bin/update-gems`
   against the newly pinned upstream dependency files.
-- [`bin/sync-lich-checkout`](bin/sync-lich-checkout) creates your writable Lich
-  clone for initial setup or switches it to the pinned commit after a release bump. It uses the
+- [`bin/sync-lich-checkout`](bin/sync-lich-checkout) is a legacy helper for a writable
+  clone, not packaged runtime setup. It uses the
   fixed `$LICHNIX_DATA_HOME/packaged/lich-5` path, preserves
   application data, and refuses tracked local edits. Verify Lich/Saga manually
   afterward.
@@ -264,10 +297,8 @@ environment.
   of requiring `upstream/lich-5`.
 - [x] Make the Lich source directory configurable rather than assuming its
   location relative to this repository.
-- [ ] Separate the application source from mutable runtime state, including
-  credentials, saved logins, maps, scripts, databases, and logs. This might be
-  tricky due to the fact that lich5 does not seem to expose a single env var
-  controlling where it places application data.
+- [x] Separate packaged core source from mutable runtime state, including
+  credentials, saved logins, maps, scripts, databases, and logs.
 - [x] Investigate a standalone Nix-provided Ruby launcher that can be executed
   by Saga without first launching Saga from a Nix shell.
 
@@ -298,6 +329,7 @@ See `docs/gtk_troubleshooting.md` for investigation notes.
 ### Nix packaging
 
 - [x] Package Ruby gems using `bundix` and `bundlerEnv`.
-- [ ] Create a Nix derivation for Lich itself.
+- [x] Create a Nix derivation for Lich itself.
 - [x] Provide a standalone `lich` executable using the packaged Ruby environment.
-- [ ] Ensure all mutable application data resides outside the immutable Nix store.
+- [x] Put managed mutable application data outside the immutable Nix store.
+  Arbitrary script writes are not sandboxed; GUI/gameplay verification remains.
