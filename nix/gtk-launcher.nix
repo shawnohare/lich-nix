@@ -11,9 +11,10 @@
   script,
   fontsConf,
   pathPackages ? [],
+  program ? "ruby-lich",
 }:
 # Build-time wrapping shared by the packaged and writable Ruby launchers.
-runCommand "ruby-lich" {
+runCommand program {
   nativeBuildInputs = [wrapGAppsHook3];
   buildInputs = [
     gtk3
@@ -23,11 +24,11 @@ runCommand "ruby-lich" {
     hicolor-icon-theme
     shared-mime-info
   ];
-  meta.mainProgram = "ruby-lich";
+  meta.mainProgram = program;
 } ''
   mkdir -p "$out/bin"
-  cp ${script} "$out/bin/ruby-lich"
-  chmod +x "$out/bin/ruby-lich"
+  cp ${script} "$out/bin/${program}"
+  chmod +x "$out/bin/${program}"
   gappsWrapperArgsHook
   gappsWrapperArgs+=(
     --prefix PATH : "${lib.makeBinPath pathPackages}"
@@ -38,5 +39,5 @@ runCommand "ruby-lich" {
     shared-mime-info
   ]}"
   )
-  wrapGApp "$out/bin/ruby-lich"
+  wrapGApp "$out/bin/${program}"
 ''

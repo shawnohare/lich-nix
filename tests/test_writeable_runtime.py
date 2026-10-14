@@ -41,7 +41,7 @@ class WriteableRuntime(unittest.TestCase):
         for data_root in (None, self.root / 'custom data root'):
             if data_root is not None:
                 self.env['LICHNIX_DATA_HOME'] = str(data_root)
-            expected = (data_root or self.root / '.local/share/lichnix') / 'writeable/lich-5'
+            expected = (data_root or self.root / '.local/share/lichnix') / 'src/lich-5'
             result = self.ruby('-e', 'puts ENV.fetch("LICHNIX_WRITEABLE_SRC_HOME"); puts Gem.dir')
             self.assertEqual(result.returncode, 0, result.stderr)
             source, gems = result.stdout.splitlines()

@@ -12,16 +12,8 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-lich_checkout="${LICHNIX_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/lichnix}/packaged/lich-5"
+lich_checkout="${LICHNIX_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/lichnix}/runtime"
 cd "$lich_checkout"
 
-# TODO: Could add all the data dir args to pass to lich here, but that seems
-# like a headache.
-exec ruby -rbundler/setup "$@" \
-    --home="${lich_checkout}" \
-    --script-dir="${lich_checkout}/user/scripts" \
-    --map-dir="${lich_checkout}/user/maps" \
-    --log-dir="${lich_checkout}/user/logs" \
-    --backup-dir="${lich_checkout}/user/backup" \
-    --data-dir="${lich_checkout}/user/data-dir" \
-    --active-session-dir="${lich_checkout}/user/sessions"
+# The packaged Ruby entry point supplies and propagates the directory flags.
+exec ruby -rbundler/setup "$@"
